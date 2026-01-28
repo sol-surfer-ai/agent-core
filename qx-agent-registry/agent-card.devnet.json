@@ -1,0 +1,31 @@
+{
+  "name": "SOL Surfer",
+  "description": "Rides Solana liquidity waves and emits SOL trading signals.",
+  "version": "0.1.0-devnet",
+  "chain": "solana",
+  "network": "devnet",
+  "agent": {
+    "asset": "6MBXFZG9zUkhcub68RtGuYaghVYfYhu9NqhM1kXn4Pdv",
+    "collection": "BPzTDYcD43oDgaz8jZjM81hmbYzYcQ2Q34F3mTPFFpdo",
+    "owner": "AkR7Yu2ynNk2oY1d5kWSyTG9GGBQELWARqaHXxbFeaPt"
+  },
+  "endpoints": [
+    {
+      "type": "http",
+      "url": "http://localhost:8787/health"
+    }
+  ],
+  "skills": [
+    {
+      "id": "sol.liquidity.watch",
+      "name": "SOL Liquidity Watcher",
+      "description": "Monitors Solana liquidity flows and produces actionable SOL trading signals."
+    },
+    {
+      "id": "sol.wave.signal",
+      "name": "Wave Signal Generator",
+      "description": "Identifies momentum and liquidity wave patterns on Solana."
+    }
+  ],
+  "tags": ["SOL", "liquidity", "signals", "trading"]
+}
