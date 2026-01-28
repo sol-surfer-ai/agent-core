@@ -1,0 +1,19 @@
+{
+  "name": "QX Watchtower Agent",
+  "description": "Monitors QX token on-chain activity and market signals",
+  "skills": [
+    "market-monitoring",
+    "onchain-analysis",
+    "solana-agent-registry"
+  ],
+  "domains": [
+    "crypto",
+    "defi",
+    "solana"
+  ],
+  "endpoints": {
+    "mcp": "http://localhost:3000/mcp",
+    "a2a": "http://localhost:3000/a2a"
+  },
+  "publicKey": "9AXvAuu8nKMX5YeJL59ajsxjyMAVTZN7HaAQu3WGU6F"
+}
