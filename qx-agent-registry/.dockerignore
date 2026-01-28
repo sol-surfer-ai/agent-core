@@ -1,0 +1,9 @@
+node_modules/
+# secrets / keys
+agent-keypair.json
+*.key
+*.pem
+*.pfx
+*.p12
+.env
+.env.*
