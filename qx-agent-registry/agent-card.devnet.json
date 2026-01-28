@@ -1,7 +1,7 @@
 {
   "name": "SOL Surfer",
   "description": "Rides Solana liquidity waves and emits SOL trading signals.",
-  "version": "0.1.0-devnet",
+  "version": "0.1.1-devnet",
   "chain": "solana",
   "network": "devnet",
   "agent": {
