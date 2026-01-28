@@ -18,7 +18,7 @@ async function main() {
   const collection = new PublicKey("BPzTDYcD43oDgaz8jZjM81hmbYzYcQ2Q34F3mTPFFpdo");
 
   const newUri =
-    "https://raw.githubusercontent.com/sol-surfer-ai/agent-core/main/agent-card.devnet.json;
+    "https://raw.githubusercontent.com/sol-surfer-ai/agent-core/main/agent-card.devnet.json";
 
   console.log("Updating agent URI to:", newUri);
 
