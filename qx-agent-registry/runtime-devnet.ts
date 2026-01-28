@@ -1,9 +1,10 @@
 import http from "http";
 import { URL } from "url";
 
-const PORT = 8787;
-
 type Signal = "BUY" | "SELL" | "HOLD";
+
+const PORT = Number(process.env.PORT ?? 3000);
+const HOST = "0.0.0.0";
 
 function computeSignal(params: {
   price?: number;
@@ -12,10 +13,6 @@ function computeSignal(params: {
 }): { signal: Signal; confidence: number; reasons: string[] } {
   const reasons: string[] = [];
 
-  // Dummy / placeholder logic for now:
-  // - if price > sma and momentum positive => BUY
-  // - if price < sma and momentum negative => SELL
-  // - otherwise HOLD
   const price = params.price;
   const sma = params.sma;
   const momentum = params.momentum;
@@ -46,7 +43,9 @@ function computeSignal(params: {
 
 http
   .createServer((req, res) => {
-    const url = new URL(req.url ?? "/", `http://localhost:${PORT}`);
+    // Use the incoming host header if present; fall back to a safe base.
+    const hostHeader = req.headers.host ?? `127.0.0.1:${PORT}`;
+    const url = new URL(req.url ?? "/", `http://${hostHeader}`);
 
     if (url.pathname === "/health") {
       res.writeHead(200, { "Content-Type": "application/json" });
@@ -62,7 +61,6 @@ http
     }
 
     if (url.pathname === "/signal") {
-      // Example: /signal?price=105&sma=100&momentum=0.8
       const price = url.searchParams.get("price");
       const sma = url.searchParams.get("sma");
       const momentum = url.searchParams.get("momentum");
@@ -90,7 +88,6 @@ http
     res.writeHead(404);
     res.end("not found");
   })
-  .listen(PORT, () => {
-    console.log(`✅ SOL Surfer runtime: http://localhost:${PORT}/health`);
-    console.log(`✅ SOL Surfer signal:  http://localhost:${PORT}/signal`);
+  .listen(PORT, HOST, () => {
+    console.log(`✅ SOL Surfer runtime listening on ${HOST}:${PORT}`);
   });
