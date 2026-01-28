@@ -6,7 +6,6 @@
   "scripts": {
   "build": "tsc -p tsconfig.json",
   "start": "node dist/runtime-devnet.js",
-  "dev": "tsx runtime-devnet.ts",
   "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

@@ -1,6 +1,6 @@
 import fs from "fs";
-import { Keypair } from "@solana/web3.js";
-import { createDevnetClient, IdentityTransactionBuilder } from "8004-solana";
+import { Connection, Keypair, clusterApiUrl } from "@solana/web3.js";
+import { IdentityTransactionBuilder } from "8004-solana";
 
 function loadKeypair() {
   const secret = Uint8Array.from(JSON.parse(fs.readFileSync("agent-keypair.json", "utf8")));
@@ -10,14 +10,13 @@ function loadKeypair() {
 async function main() {
   const signer = loadKeypair();
 
-  const client = createDevnetClient();
-  const itb = new IdentityTransactionBuilder(client);
+  const connection = new Connection(clusterApiUrl("devnet"), "confirmed");
+  const itb = new IdentityTransactionBuilder(connection);
 
-  const agentUri = "https://example.com/qx-watchtower/registration.json"; // placeholder for now
+  const agentUri = "https://example.com/qx-watchtower/registration.json"; // placeholder
 
   const result = await itb.registerAgent(agentUri, {
-    signer,
-    // atomEnabled: true, // default true
+    signer
   } as any);
 
   console.log("registerAgent result:", result);

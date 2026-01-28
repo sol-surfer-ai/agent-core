@@ -20,12 +20,18 @@ FROM base AS build
 RUN apt-get update -qq && \
     apt-get install --no-install-recommends -y build-essential git node-gyp pkg-config python-is-python3
 
-# Install node modules
+# Install node modules (include dev deps so we can run tsc)
 COPY package-lock.json package.json ./
-RUN npm ci
+RUN npm ci --include=dev
 
 # Copy application code
 COPY . .
+
+# Build TS -> dist/
+RUN npm run build
+
+# Remove dev deps after build (keeps final image production lean)
+RUN npm prune --omit=dev
 
 
 # Final stage for app image
@@ -34,6 +40,6 @@ FROM base
 # Copy built application
 COPY --from=build /app /app
 
-# Start the server by default, this can be overwritten at runtime
+# Start the server by default
 EXPOSE 3000
 CMD [ "npm", "run", "start" ]
