@@ -10,10 +10,8 @@
     "owner": "AkR7Yu2ynNk2oY1d5kWSyTG9GGBQELWARqaHXxbFeaPt"
   },
   "endpoints": [
-    {
-      "type": "http",
-      "url": "http://localhost:8787/health"
-    }
+    { "type": "http", "url": "http://localhost:8787/health" },
+    { "type": "http", "url": "http://localhost:8787/signal" }
   ],
   "skills": [
     {
