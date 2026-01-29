@@ -10,8 +10,8 @@
     "owner": "AkR7Yu2ynNk2oY1d5kWSyTG9GGBQELWARqaHXxbFeaPt"
   },
   "endpoints": [
-    { "type": "http", "url": "https://agent-core.fly.dev/health" },
-    { "type": "http", "url": "https://agent-core.fly.dev/signal" }
+    { "type": "https", "url": "https://agent-core.fly.dev/health" },
+    { "type": "https", "url": "https://agent-core.fly.dev/signal" }
   ],
   "skills": [
     {
