@@ -24,13 +24,31 @@ const MOMENTUM_LEN = Number(process.env.MOMENTUM_LEN ?? 5);
 const SAMPLE_INTERVAL_MS = Number(process.env.SAMPLE_INTERVAL_MS ?? 15000);
 const OUTLIER_PCT = Number(process.env.OUTLIER_PCT ?? 1.0);
 
+const PRICE_PROBE_LAMPORTS = process.env.PRICE_PROBE_LAMPORTS ?? "10000000";
+const LIQUIDITY_PROBE_LAMPORTS = process.env.LIQUIDITY_PROBE_LAMPORTS ?? "1000000000";
+const DEFAULT_SLIPPAGE_BPS = Number(process.env.SLIPPAGE_BPS ?? 50);
+
 type PriceSample = { ts: number; price: number; route: string[] };
 
-const priceHistory: PriceSample[] = [];
-
-let lastTick: PriceSample | undefined;
-let lastComputed: {
+type LiquiditySnapshot = {
+  quoteProvider: string;
+  inputMint: string;
+  outputMint: string;
+  inAmount: string;
+  outAmount?: string;
+  otherAmountThreshold?: string;
+  slippageBps: number;
+  priceImpactPct?: number;
+  swapUsdValue?: string;
+  contextSlot?: number;
+  timeTaken?: number;
+  venues: Array<{ label: string; pct?: number }>;
   ts: string;
+};
+
+type ComputedState = {
+  ts: string;
+  ready: boolean;
   price?: number;
   sma?: number;
   momentum?: number;
@@ -39,8 +57,15 @@ let lastComputed: {
   reasons: string[];
   dexRoute: string[];
   samples: { count: number; smaLen: number; momentumLen: number };
-} = {
+  liquidity?: LiquiditySnapshot;
+};
+
+const priceHistory: PriceSample[] = [];
+let lastTick: PriceSample | undefined;
+
+let lastComputed: ComputedState = {
   ts: new Date().toISOString(),
+  ready: false,
   signal: "HOLD",
   confidence: 0.25,
   reasons: ["Warming up..."],
@@ -124,7 +149,7 @@ async function fetchJson(url: string, init?: RequestInit, timeoutMs = 15000) {
   try {
     const headers: Record<string, string> = {
       accept: "application/json",
-      "user-agent": "sol-surfer-runtime/0.1"
+      "user-agent": "sol-surfer-runtime/0.2"
     };
 
     if (JUPITER_API_KEY) headers["x-api-key"] = JUPITER_API_KEY;
@@ -138,13 +163,15 @@ async function fetchJson(url: string, init?: RequestInit, timeoutMs = 15000) {
     const text = await res.text();
 
     if (!res.ok) {
-      throw new Error(`HTTP ${res.status} ${res.statusText} from ${url}\n${text.slice(0, 500)}`);
+      throw new Error(
+        `HTTP ${res.status} ${res.statusText} from ${url}\n${text.slice(0, 600)}`
+      );
     }
 
     try {
       return JSON.parse(text);
     } catch {
-      throw new Error(`Non-JSON response from ${url}\n${text.slice(0, 500)}`);
+      throw new Error(`Non-JSON response from ${url}\n${text.slice(0, 600)}`);
     }
   } catch (e: any) {
     const msg =
@@ -161,7 +188,7 @@ async function getDexQuote(params: {
   amount: string;
   slippageBps?: number;
 }) {
-  const slippageBps = params.slippageBps ?? 50;
+  const slippageBps = params.slippageBps ?? DEFAULT_SLIPPAGE_BPS;
 
   const u = new URL(QUOTE_PROVIDER);
   u.searchParams.set("inputMint", params.inputMint);
@@ -206,40 +233,101 @@ function computeMomentumFromHistory(len: number) {
   return now - prev;
 }
 
-async function getDexPriceUSDCPerSOL() {
-  const quote = await getDexQuote({
-    inputMint: SOL_MINT,
-    outputMint: USDC_MINT,
-    amount: "10000000",
-    slippageBps: 50
-  });
-
-  const inAmount = asNum(quote?.inAmount) ?? 10_000_000;
-  const outAmount = asNum(quote?.outAmount);
-
-  if (!outAmount || !inAmount) throw new Error("Invalid quote amounts");
-
-  const price = outAmount / 1_000_000 / (inAmount / 1_000_000_000);
-  const routeLabels = quote?.routePlan?.map((p: any) => p?.swapInfo?.label).filter(Boolean) ?? [];
-
-  return { price, routeLabels };
-}
-
 function isOutlier(prev: number, next: number) {
   const pct = Math.abs((next - prev) / prev) * 100;
   return pct >= OUTLIER_PCT;
 }
 
+function parseVenuesFromQuote(quote: any): Array<{ label: string; pct?: number }> {
+  const rp = Array.isArray(quote?.routePlan) ? quote.routePlan : [];
+  const venues: Array<{ label: string; pct?: number }> = [];
+
+  for (const step of rp) {
+    const label =
+      step?.swapInfo?.label ??
+      step?.swapInfo?.ammKey ??
+      step?.swapInfo?.amm ??
+      step?.label;
+
+    const pct = asNum(step?.percent) ?? asNum(step?.swapInfo?.percent);
+
+    if (label) venues.push({ label: String(label), pct });
+  }
+
+  if (venues.length === 0) {
+    const fallback =
+      quote?.routePlan?.[0]?.swapInfo?.label ??
+      quote?.routePlan?.[0]?.label ??
+      quote?.label;
+    if (fallback) venues.push({ label: String(fallback) });
+  }
+
+  return venues;
+}
+
+async function getDexPriceUSDCPerSOL() {
+  const quote = await getDexQuote({
+    inputMint: SOL_MINT,
+    outputMint: USDC_MINT,
+    amount: PRICE_PROBE_LAMPORTS,
+    slippageBps: DEFAULT_SLIPPAGE_BPS
+  });
+
+  const inAmount = asNum(quote?.inAmount) ?? asNum(PRICE_PROBE_LAMPORTS);
+  const outAmount = asNum(quote?.outAmount);
+
+  if (!outAmount || !inAmount) throw new Error("Invalid price quote amounts");
+
+  const price = outAmount / 1_000_000 / (inAmount / 1_000_000_000);
+  const routeLabels = parseVenuesFromQuote(quote).map((v) => v.label);
+
+  return { price, routeLabels };
+}
+
+async function getLiquiditySnapshot() {
+  const quote = await getDexQuote({
+    inputMint: SOL_MINT,
+    outputMint: USDC_MINT,
+    amount: LIQUIDITY_PROBE_LAMPORTS,
+    slippageBps: DEFAULT_SLIPPAGE_BPS
+  });
+
+  const priceImpactPct = asNum(quote?.priceImpactPct);
+  const contextSlot = asNum(quote?.contextSlot);
+  const timeTaken = asNum(quote?.timeTaken);
+
+  const snap: LiquiditySnapshot = {
+    quoteProvider: QUOTE_PROVIDER,
+    inputMint: String(quote?.inputMint ?? SOL_MINT),
+    outputMint: String(quote?.outputMint ?? USDC_MINT),
+    inAmount: String(quote?.inAmount ?? LIQUIDITY_PROBE_LAMPORTS),
+    outAmount: quote?.outAmount != null ? String(quote.outAmount) : undefined,
+    otherAmountThreshold:
+      quote?.otherAmountThreshold != null ? String(quote.otherAmountThreshold) : undefined,
+    slippageBps: Number(quote?.slippageBps ?? DEFAULT_SLIPPAGE_BPS),
+    priceImpactPct: priceImpactPct != null ? priceImpactPct : undefined,
+    swapUsdValue: quote?.swapUsdValue != null ? String(quote.swapUsdValue) : undefined,
+    contextSlot: contextSlot != null ? contextSlot : undefined,
+    timeTaken: timeTaken != null ? timeTaken : undefined,
+    venues: parseVenuesFromQuote(quote),
+    ts: new Date().toISOString()
+  };
+
+  return snap;
+}
+
 async function sampleLoop() {
   while (true) {
     try {
-      const dex = await getDexPriceUSDCPerSOL();
-      const sample: PriceSample = { ts: Date.now(), price: dex.price, route: dex.routeLabels };
+      const [p, liq] = await Promise.all([getDexPriceUSDCPerSOL(), getLiquiditySnapshot()]);
+
+      const sample: PriceSample = { ts: Date.now(), price: p.price, route: p.routeLabels };
 
       if (lastTick && isOutlier(lastTick.price, sample.price)) {
         lastComputed = {
           ...lastComputed,
           ts: new Date().toISOString(),
+          ready: lastComputed.ready,
           price: sample.price,
           sma: lastComputed.sma,
           momentum: lastComputed.momentum,
@@ -247,6 +335,7 @@ async function sampleLoop() {
           confidence: 0.25,
           reasons: [`Outlier tick ignored (${OUTLIER_PCT}% threshold)`],
           dexRoute: sample.route,
+          liquidity: liq,
           samples: { count: priceHistory.length, smaLen: SMA_LEN, momentumLen: MOMENTUM_LEN }
         };
       } else {
@@ -256,16 +345,21 @@ async function sampleLoop() {
         const sma = computeSmaFromHistory(SMA_LEN);
         const momentum = computeMomentumFromHistory(MOMENTUM_LEN);
 
+        const ready =
+          priceHistory.length >= SMA_LEN && priceHistory.length >= MOMENTUM_LEN + 1;
+
         const inputs = { price: sample.price, sma, momentum };
         const result = computeSignal(inputs);
 
         lastComputed = {
           ts: new Date().toISOString(),
+          ready,
           price: sample.price,
           sma,
           momentum,
           ...result,
           dexRoute: sample.route,
+          liquidity: liq,
           samples: { count: priceHistory.length, smaLen: SMA_LEN, momentumLen: MOMENTUM_LEN }
         };
       }
@@ -296,14 +390,19 @@ http
           status: "running",
           network: "devnet",
           ts: new Date().toISOString(),
-          sampler: { intervalMs: SAMPLE_INTERVAL_MS, samples: priceHistory.length }
+          sampler: {
+            intervalMs: SAMPLE_INTERVAL_MS,
+            samples: priceHistory.length,
+            priceProbeLamports: PRICE_PROBE_LAMPORTS,
+            liquidityProbeLamports: LIQUIDITY_PROBE_LAMPORTS
+          }
         });
         return;
       }
 
       if (url.pathname === "/probe") {
         const r = await fetch("https://example.com", {
-          headers: { accept: "text/html", "user-agent": "sol-surfer-runtime/0.1" }
+          headers: { accept: "text/html", "user-agent": "sol-surfer-runtime/0.2" }
         });
         const text = await r.text();
         sendJson(res, 200, {
@@ -340,29 +439,26 @@ http
           slippageBps: slippageBps != null ? Number(slippageBps) : undefined
         });
 
-        const inAmount = asNum(quote?.inAmount) ?? asNum(amount);
-        const outAmount = asNum(quote?.outAmount);
-        const otherAmountThreshold = asNum(quote?.otherAmountThreshold);
+        const inAmount = quote?.inAmount != null ? String(quote.inAmount) : String(amount);
+        const outAmount = quote?.outAmount != null ? String(quote.outAmount) : undefined;
+        const otherAmountThreshold =
+          quote?.otherAmountThreshold != null ? String(quote.otherAmountThreshold) : undefined;
+
         const priceImpactPct = asNum(quote?.priceImpactPct);
-
-        const routeLabels =
-          quote?.routePlan?.map((p: any) => p?.swapInfo?.label).filter(Boolean) ?? [];
-
-        const effectivePrice =
-          inAmount && outAmount ? outAmount / 1_000_000 / (inAmount / 1_000_000_000) : undefined;
+        const venues = parseVenuesFromQuote(quote);
 
         sendJson(res, 200, {
           quoteProvider: QUOTE_PROVIDER,
           inputMint: String(inputMint),
           outputMint: String(outputMint),
           amount: String(amount),
-          slippageBps: slippageBps ?? 50,
+          slippageBps: Number(quote?.slippageBps ?? slippageBps ?? DEFAULT_SLIPPAGE_BPS),
           inAmount,
           outAmount,
           otherAmountThreshold,
           priceImpactPct,
-          effectivePrice,
-          routeLabels,
+          venues,
+          raw: quote,
           ts: new Date().toISOString()
         });
         return;
@@ -376,6 +472,7 @@ http
 
         sendJson(res, 200, {
           pair: "SOL/USDC",
+          ready: lastComputed.ready,
           inputs: {
             price: lastComputed.price,
             sma: lastComputed.sma,
@@ -384,6 +481,7 @@ http
           priceSource: "dex",
           dexRoute: lastComputed.dexRoute,
           samples: lastComputed.samples,
+          liquidity: lastComputed.liquidity,
           signal: lastComputed.signal,
           confidence: lastComputed.confidence,
           reasons: lastComputed.reasons,
